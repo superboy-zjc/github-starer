@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub Star Counter",
+  "version": "1.0",
+  "description": "Display star counts for repositories in GitHub search results",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://github.com/search*"],
+      "js": ["content.js"]
+    }
+  ],
+  "options_page": "options.html"
+}
