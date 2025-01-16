@@ -16,7 +16,10 @@ async function getCachedStarCount(repoPath) {
             const cacheEntry = cache[repoPath];
             
             if (cacheEntry) {
-                resolve(cacheEntry.stars);
+                resolve({
+                    stars: cacheEntry.stars,
+                    status: cacheEntry.status || 'grey'
+                });
             } else {
                 resolve(null);
             }
@@ -24,13 +27,14 @@ async function getCachedStarCount(repoPath) {
     });
 }
 
-async function setCachedStarCount(repoPath, stars) {
+async function setCachedStarCount(repoPath, stars, status = 'grey') {
     return new Promise((resolve) => {
         chrome.storage.local.get(['starCounts'], function(result) {
             const cache = result.starCounts || {};
             cache[repoPath] = {
                 stars: stars,
-                timestamp: Date.now() // Keep timestamp for reference, but don't use it for expiration
+                status: status,
+                timestamp: Date.now()
             };
             
             chrome.storage.local.set({ starCounts: cache }, resolve);
@@ -47,8 +51,8 @@ async function getStarCount(repoPath) {
     // Check persistent cache
     const cachedStars = await getCachedStarCount(repoPath);
     if (cachedStars !== null) {
-        starCountCache.set(repoPath, cachedStars);
-        return cachedStars;
+        starCountCache.set(repoPath, cachedStars.stars);
+        return cachedStars.stars;
     }
 
     try {
@@ -76,11 +80,79 @@ async function getStarCount(repoPath) {
 }
 
 function createStarCountElement(stars) {
-    const span = document.createElement('span');
-    span.textContent = `⭐ ${stars}`;
-    span.className = 'github-star-counter';
-    span.style.marginLeft = '8px';
-    return span;
+    const container = document.createElement('span');
+    container.style.marginLeft = '8px';
+    
+    const starSpan = document.createElement('span');
+    starSpan.textContent = `⭐ ${stars}`;
+    starSpan.className = 'github-star-counter';
+    container.appendChild(starSpan);
+    
+    return container;
+}
+
+function createStatusButton(repoPath, initialStatus = 'grey') {
+    const button = document.createElement('button');
+    button.className = 'status-button';
+    button.style.marginLeft = '8px';
+    button.style.padding = '0 6px';
+    button.style.border = '1px solid #d0d7de';
+    button.style.borderRadius = '6px';
+    button.style.cursor = 'pointer';
+    button.style.transition = 'all 0.2s ease';
+    button.style.fontSize = '12px';
+    button.style.fontWeight = '500';
+    button.style.height = '18px';
+    button.style.lineHeight = '16px';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.minWidth = '24px';
+
+    const updateStyle = (status) => {
+        switch(status) {
+            case 'green':
+                button.style.backgroundColor = '#2da44e';
+                button.style.borderColor = '#2da44e';
+                button.style.color = 'white';
+                button.textContent = '✓';
+                break;
+            case 'red':
+                button.style.backgroundColor = '#cf222e';
+                button.style.borderColor = '#cf222e';
+                button.style.color = 'white';
+                button.textContent = '×';
+                break;
+            default: // grey
+                button.style.backgroundColor = '#f6f8fa';
+                button.style.borderColor = '#d0d7de';
+                button.style.color = '#57606a';
+                button.textContent = '?';
+                break;
+        }
+    };
+
+    const setStatus = async (newStatus) => {
+        button.dataset.status = newStatus;
+        updateStyle(newStatus);
+        
+        const cachedData = await getCachedStarCount(repoPath);
+        if (cachedData) {
+            await setCachedStarCount(repoPath, cachedData.stars, newStatus);
+        }
+    };
+
+    button.addEventListener('click', () => {
+        const statuses = ['grey', 'green', 'red'];
+        const currentIndex = statuses.indexOf(button.dataset.status);
+        const newStatus = statuses[(currentIndex + 1) % statuses.length];
+        setStatus(newStatus);
+    });
+
+    button.dataset.status = initialStatus;
+    updateStyle(initialStatus);
+    
+    return button;
 }
 
 async function addStarCount() {
@@ -102,11 +174,18 @@ async function addStarCount() {
         const stars = await getStarCount(repoPath);
         if (stars === null) continue;
 
-        const starCountElement = createStarCountElement(stars);
-        searchTitle.childNodes[0].insertAdjacentElement('afterend', starCountElement);
+        const container = createStarCountElement(stars);
+        
+        // Get cached status and create status button
+        const cachedData = await getCachedStarCount(repoPath);
+        const status = cachedData?.status || 'grey';
+        const statusButton = createStatusButton(repoPath, status);
+        container.appendChild(statusButton);
+        
+        // Insert after the repository link
+        searchTitle.childNodes[0].after(container);
     }
 }
-
 
 // Monitor for navigation changes (tab switches, search updates)
 const navObserver = new MutationObserver((mutations) => {
