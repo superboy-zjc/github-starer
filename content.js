@@ -41,7 +41,11 @@ async function setCachedStarCount(repoPath, stars, status = 'grey') {
         });
     });
 }
-
+/*
+ @Author: Gavin Zhong
+ @Date: 2025-01-31
+ @Description: Fetch star count from GitHub API with user defined API key
+*/
 async function getStarCount(repoPath) {
     // Check in-memory cache first
     if (starCountCache.has(repoPath)) {
@@ -62,9 +66,28 @@ async function getStarCount(repoPath) {
         const response = await fetch(`https://api.github.com/repos/${repoPath}`, {
             headers: headers
         });
-        
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
+        if (!response.ok) {
+            if (response.status === 401) {
+                // API key expired or invalid
+                chrome.runtime.sendMessage({
+                    type: 'API_ERROR',
+                    error: 'GitHub API key is invalid or expired. Please update your API key in extension settings.'
+                });
+            } else if (response.status === 403) {
+                // Rate limit exceeded
+                chrome.runtime.sendMessage({
+                    type: 'API_ERROR',
+                    error: 'GitHub API rate limit exceeded. Please add an API key in extension settings.'
+                });
+            } else {
+                // Other errors
+                chrome.runtime.sendMessage({
+                    type: 'API_ERROR',
+                    error: `GitHub API error: ${response.status}`
+                });
+            }
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
         const stars = data.stargazers_count;
 
